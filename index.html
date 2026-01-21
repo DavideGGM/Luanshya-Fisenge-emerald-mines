@@ -3,37 +3,80 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>LUANSHYA — Show/Hide (DTM geometrie only)</title>
+<title>LUANSHYA — Viewer interattivo</title>
 
 <script src="https://static.sketchfab.com/api/sketchfab-viewer-1.12.1.js"></script>
 
 <style>
-  body{margin:0;height:100vh;display:grid;grid-template-columns:520px 1fr;font-family:system-ui,sans-serif;}
-  #left{border-right:1px solid #ddd;padding:12px;overflow:auto;}
-  #api-frame{width:100%;height:100%;border:0;}
-  .topline{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
-  #status{font-size:13px;opacity:.75;}
+  body {
+    margin:0;
+    font-family: system-ui, sans-serif;
+  }
+
+  /* Layout desktop */
+  .container {
+    display:grid;
+    grid-template-columns:480px 1fr;
+    height:100vh;
+  }
+
+  #left {
+    border-right:1px solid #ddd;
+    padding:12px;
+    overflow:auto;
+    background:white;
+  }
+
+  #api-frame {
+    width:100%;
+    height:100%;
+    border:0;
+    min-height:300px;
+  }
+
+  /* Mobile layout */
+  @media (max-width: 900px) {
+    .container {
+      grid-template-columns:1fr;
+      grid-template-rows:60vh auto;
+      height:100vh;
+    }
+    #api-frame {
+      height:60vh;
+      min-height:60vh;
+    }
+    #left {
+      border-right:none;
+      border-top:1px solid #ddd;
+      max-height:40vh;
+    }
+  }
+
+  .topline{display:flex;justify-content:space-between;gap:10px;}
+  #status{font-size:13px;opacity:.7;}
   .topbar{display:flex;gap:8px;margin:10px 0 12px;}
   .topbar button{flex:1;padding:10px;cursor:pointer;}
   .row{display:grid;grid-template-columns:1fr 95px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;}
-  .name{font-size:13px;line-height:1.2;}
-  .id{font-size:11px;opacity:.6;margin-top:2px;}
+  .name{font-size:13px;}
+  .id{font-size:11px;opacity:.6;}
   .toggle{padding:8px 10px;font-weight:800;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;}
   .toggle.off{opacity:.55;}
-  .disabled{opacity:.45;}
 </style>
 </head>
 
 <body>
+
+<div class="container">
+
   <div id="left">
     <div class="topline">
-      <b>Elementi del modello</b>
+      <b>LUANSHYA – Controllo Modello</b>
       <div id="status">Inizializzo…</div>
     </div>
 
     <div class="topbar">
-      <button id="showAll" disabled class="disabled">Mostra tutto</button>
-      <button id="hideAll" disabled class="disabled">Nascondi tutto</button>
+      <button id="showAll" disabled>Mostra tutto</button>
+      <button id="hideAll" disabled>Nascondi tutto</button>
     </div>
 
     <div id="list"></div>
@@ -41,269 +84,157 @@
 
   <iframe id="api-frame"
     title="LUANSHYA"
-    frameborder="0"
-    allowfullscreen
-    mozallowfullscreen="true"
-    webkitallowfullscreen="true"
     allow="autoplay; fullscreen; xr-spatial-tracking"
     xr-spatial-tracking
     execution-while-out-of-viewport
     execution-while-not-rendered
     web-share
-    src="https://sketchfab.com/models/8a3b7c65c4d6495ba888a91ca768555d/embed?annotations_visible=1">
+    allowfullscreen
+    src="https://sketchfab.com/models/8a3b7c65c4d6495ba888a91ca768555d/embed">
   </iframe>
 
+</div>
+
 <script>
-  const MODEL_UID = "8a3b7c65c4d6495ba888a91ca768555d";
+const MODEL_UID = "8a3b7c65c4d6495ba888a91ca768555d";
 
-  const iframe = document.getElementById("api-frame");
-  const statusEl = document.getElementById("status");
-  const listEl = document.getElementById("list");
-  const btnShowAll = document.getElementById("showAll");
-  const btnHideAll = document.getElementById("hideAll");
+const iframe = document.getElementById("api-frame");
+const statusEl = document.getElementById("status");
+const listEl = document.getElementById("list");
+const btnShowAll = document.getElementById("showAll");
+const btnHideAll = document.getElementById("hideAll");
 
-  const client = new Sketchfab(iframe);
-  let apiRef = null;
+const client = new Sketchfab(iframe);
+let apiRef = null;
+let groups = [];
+const groupVisible = new Map();
 
-  // gruppi: {name, ids[], note}
-  let groups = [];
-  const groupVisible = new Map();
+function setState(name, visible, btn){
+  groupVisible.set(name, visible);
+  if(visible){btn.textContent="ON";btn.classList.remove("off");}
+  else{btn.textContent="OFF";btn.classList.add("off");}
+}
 
-  function enableControls(ok){
-    btnShowAll.disabled = !ok;
-    btnHideAll.disabled = !ok;
-    btnShowAll.classList.toggle("disabled", !ok);
-    btnHideAll.classList.toggle("disabled", !ok);
-  }
+function apply(ids, show){
+  ids.forEach(id => show ? apiRef.show(id) : apiRef.hide(id));
+}
 
-  function safeName(n){
-    const nm = (n && n.name ? String(n.name) : "").trim();
-    return nm || null;
-  }
+function buildList(){
+  listEl.innerHTML="";
+  groups.forEach(g=>{
+    const row=document.createElement("div");
+    row.className="row";
 
-  function baseName(name){
-    return name.replace(/_\d+$/, "");
-  }
+    const left=document.createElement("div");
+    left.className="name";
+    left.innerHTML=`<div>${g.name}</div><div class="id">geometrie: ${g.ids.length}</div>`;
 
-  function setGroupState(name, isVisible, btnEl){
-    groupVisible.set(name, isVisible);
-    if(isVisible){ btnEl.textContent="ON"; btnEl.classList.remove("off"); }
-    else{ btnEl.textContent="OFF"; btnEl.classList.add("off"); }
-  }
+    const btn=document.createElement("button");
+    btn.className="toggle";
+    btn.onclick=()=>{
+      const v = groupVisible.get(g.name);
+      apply(g.ids, !v);
+      setState(g.name,!v,btn);
+    };
 
-  function applyIds(ids, makeVisible){
-    for(const id of ids){
-      if(makeVisible) apiRef.show(id);
-      else apiRef.hide(id);
-    }
-  }
+    setState(g.name,true,btn);
 
-  function buildList(){
-    listEl.innerHTML = "";
-    groups.forEach(g=>{
-      const row = document.createElement("div");
-      row.className = "row";
-      row.dataset.groupname = g.name;
-
-      const left = document.createElement("div");
-      left.className = "name";
-      left.innerHTML =
-        `<div>${g.name}</div>` +
-        `<div class="id">geometrie: ${g.ids.length}${g.note ? " — " + g.note : ""}</div>`;
-
-      const btn = document.createElement("button");
-      btn.className = "toggle";
-      btn.onclick = ()=>{
-        const isVis = groupVisible.get(g.name) ?? true;
-        applyIds(g.ids, !isVis);
-        setGroupState(g.name, !isVis, btn);
-      };
-
-      setGroupState(g.name, true, btn);
-
-      row.appendChild(left);
-      row.appendChild(btn);
-      listEl.appendChild(row);
-    });
-
-    statusEl.textContent = `Viewer pronto ✅ — gruppi: ${groups.length}`;
-    enableControls(true);
-  }
-
-  function showAll(){
-    groups.forEach(g => applyIds(g.ids, true));
-    document.querySelectorAll(".row").forEach(row=>{
-      const name = row.dataset.groupname;
-      const btn = row.querySelector(".toggle");
-      if(btn) setGroupState(name, true, btn);
-    });
-  }
-
-  function hideAll(){
-    groups.forEach(g => applyIds(g.ids, false));
-    document.querySelectorAll(".row").forEach(row=>{
-      const name = row.dataset.groupname;
-      const btn = row.querySelector(".toggle");
-      if(btn) setGroupState(name, false, btn);
-    });
-  }
-
-  btnShowAll.onclick = showAll;
-  btnHideAll.onclick = hideAll;
-
-  // ===== SceneGraph traversal =====
-  function walk(node, fn){
-    if(!node) return;
-    fn(node);
-    const kids = node.children || [];
-    for(const c of kids) walk(c, fn);
-  }
-
-  function isGeometryNode(node){
-    // in Sketchfab sceneGraph spesso i geometry hanno type che contiene "Geometry"
-    const t = String(node.type || "").toLowerCase();
-    return t.includes("geometry");
-  }
-
-  function collectGeometryIDsUnder(node){
-    const ids = new Set();
-    walk(node, (n)=>{
-      if(isGeometryNode(n) && typeof n.instanceID !== "undefined"){
-        ids.add(n.instanceID);
-      }
-    });
-    return ids;
-  }
-
-  function findNodesByBaseName(scene, exactBaseName){
-    const out = [];
-    walk(scene, (n)=>{
-      const nm = safeName(n);
-      if(!nm) return;
-      if(baseName(nm) === exactBaseName) out.push(n);
-    });
-    return out;
-  }
-
-  function findNodesByPrefix(scene, prefix){
-    const out = [];
-    walk(scene, (n)=>{
-      const nm = safeName(n);
-      if(!nm) return;
-      if(nm.startsWith(prefix)) out.push(n);
-    });
-    return out;
-  }
-
-  function setToArray(set){
-    return [...set];
-  }
-
-  function unionSets(sets){
-    const u = new Set();
-    for(const s of sets) for(const v of s) u.add(v);
-    return u;
-  }
-
-  function difference(a, b){
-    const out = new Set();
-    for(const v of a) if(!b.has(v)) out.add(v);
-    return out;
-  }
-
-  function buildGroupsFromSceneGraph(scene){
-    // 1) Resistivity: unisci tutte le geometrie sotto i nodi "Resistivity - ..."
-    const resistNodes = findNodesByPrefix(scene, "Resistivity");
-    const resistGeomSets = resistNodes.map(n => collectGeometryIDsUnder(n));
-    const resistGeom = unionSets(resistGeomSets);
-
-    // 2) DTM branch: prova prima "DTM_21" (se esiste), altrimenti "DTM"
-    const dtm21Nodes = findNodesByBaseName(scene, "DTM_21");
-    const dtmNodes   = findNodesByBaseName(scene, "DTM");
-
-    const dtmRootNodes = dtm21Nodes.length ? dtm21Nodes : dtmNodes;
-    const dtmGeomSets  = dtmRootNodes.map(n => collectGeometryIDsUnder(n));
-    const dtmGeomAll   = unionSets(dtmGeomSets);
-
-    // 3) DTM “safe”: togli tutte le geometrie che appartengono alle resistivity
-    const dtmGeomOnly = difference(dtmGeomAll, resistGeom);
-
-    console.log("Resistivity nodes:", resistNodes.length, "geom:", resistGeom.size);
-    console.log("DTM root candidates:", dtmRootNodes.map(n=>n.name), "DTM geom(all):", dtmGeomAll.size);
-    console.log("DTM geom(only terrain):", dtmGeomOnly.size);
-
-    // 4) Costruisci gruppi UI
-    const groups = [];
-
-    // DTM (safe)
-    if(dtmGeomOnly.size){
-      groups.push({
-        name: "DTM",
-        ids: setToArray(dtmGeomOnly),
-        note: "solo geometrie terreno (non spegne tutto)"
-      });
-    } else {
-      groups.push({
-        name: "DTM",
-        ids: [],
-        note: "DTM geometrie non trovate (vedi console)"
-      });
-    }
-
-    // Resistivity groups: raggruppa per baseName e usa geometrie leaf
-    // (qui NON usiamo nodeMap: usiamo direttamente sceneGraph)
-    const resistByName = new Map(); // baseName -> Set(ids)
-    for(const rn of resistNodes){
-      const nm = safeName(rn);
-      if(!nm) continue;
-      const b = baseName(nm);
-      const geom = collectGeometryIDsUnder(rn);
-      if(!resistByName.has(b)) resistByName.set(b, new Set());
-      for(const id of geom) resistByName.get(b).add(id);
-    }
-
-    const resistGroups = [...resistByName.entries()]
-      .map(([name, idsSet]) => ({ name, ids: setToArray(idsSet), note: "" }))
-      .sort((a,b)=>a.name.localeCompare(b.name));
-
-    groups.push(...resistGroups);
-
-    return groups;
-  }
-
-  // ===== Init viewer =====
-  enableControls(false);
-
-  client.init(MODEL_UID, {
-    autostart: 1,
-    preload: 1,
-
-    success: function(api){
-      apiRef = api;
-
-      api.addEventListener("viewerready", function(){
-        statusEl.textContent = "Viewer pronto ✅ — leggo scene graph…";
-
-        api.getSceneGraph(function(err, scene){
-          if(err){
-            console.error("getSceneGraph error:", err);
-            statusEl.textContent = "Errore getSceneGraph ❌ (vedi console)";
-            return;
-          }
-
-          console.log("SceneGraph:", scene);
-
-          groups = buildGroupsFromSceneGraph(scene);
-          buildList();
-        });
-      });
-    },
-
-    error: function(){
-      statusEl.textContent = "Errore inizializzazione viewer ❌";
-      console.error("Sketchfab Viewer API init error");
-    }
+    row.appendChild(left);
+    row.appendChild(btn);
+    listEl.appendChild(row);
   });
+
+  statusEl.textContent="Viewer pronto ✅";
+  btnShowAll.disabled=false;
+  btnHideAll.disabled=false;
+}
+
+btnShowAll.onclick=()=>{
+  groups.forEach(g=>apply(g.ids,true));
+  document.querySelectorAll(".toggle").forEach((b,i)=>{
+    setState(groups[i].name,true,b);
+  });
+};
+
+btnHideAll.onclick=()=>{
+  groups.forEach(g=>apply(g.ids,false));
+  document.querySelectorAll(".toggle").forEach((b,i)=>{
+    setState(groups[i].name,false,b);
+  });
+};
+
+// -------- SceneGraph logic --------
+function walk(n,fn){fn(n);(n.children||[]).forEach(c=>walk(c,fn));}
+function isGeom(n){return String(n.type||"").toLowerCase().includes("geometry");}
+function collectGeom(n){
+  const s=new Set();
+  walk(n,x=>{if(isGeom(x)&&x.instanceID!==undefined)s.add(x.instanceID)});
+  return s;
+}
+function findByPrefix(scene,p){
+  const out=[];
+  walk(scene,n=>{if(n.name && n.name.startsWith(p)) out.push(n)});
+  return out;
+}
+function findByName(scene,name){
+  const out=[];
+  walk(scene,n=>{if(n.name===name) out.push(n)});
+  return out;
+}
+function setToArr(s){return [...s];}
+function diff(a,b){const o=new Set();a.forEach(v=>{if(!b.has(v))o.add(v)});return o;}
+function union(arr){const u=new Set();arr.forEach(s=>s.forEach(v=>u.add(v)));return u;}
+
+client.init(MODEL_UID,{
+  autostart:1,
+  preload:1,
+  success:function(api){
+    apiRef=api;
+    api.addEventListener("viewerready",()=>{
+      api.getSceneGraph((err,scene)=>{
+        if(err){statusEl.textContent="Errore ❌";return;}
+
+        // Resistivity geometries
+        const resNodes=findByPrefix(scene,"Resistivity");
+        const resGeom=union(resNodes.map(n=>collectGeom(n)));
+
+        // DTM geometries (from DTM or DTM_21)
+        const dtmNodes = findByName(scene,"DTM_21").length ? 
+                         findByName(scene,"DTM_21") : findByName(scene,"DTM");
+        const dtmGeomAll=union(dtmNodes.map(n=>collectGeom(n)));
+        const dtmGeomOnly=diff(dtmGeomAll,resGeom);
+
+        // Build groups
+        groups=[];
+
+        // DTM safe
+        if(dtmGeomOnly.size>0){
+          groups.push({name:"DTM",ids:setToArr(dtmGeomOnly)});
+        }
+
+        // Resistivity grouped by basename
+        const map=new Map();
+        resNodes.forEach(n=>{
+          const base=n.name.replace(/_\d+$/,"");
+          const g=collectGeom(n);
+          if(!map.has(base)) map.set(base,new Set());
+          g.forEach(v=>map.get(base).add(v));
+        });
+        [...map.entries()].forEach(([name,ids])=>{
+          groups.push({name:name,ids:setToArr(ids)});
+        });
+
+        groups.sort((a,b)=>a.name.localeCompare(b.name));
+
+        buildList();
+      });
+    });
+  },
+  error:function(){
+    statusEl.textContent="Errore Viewer ❌";
+  }
+});
 </script>
+
 </body>
 </html>
